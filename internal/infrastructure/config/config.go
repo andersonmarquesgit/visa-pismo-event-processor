@@ -9,6 +9,11 @@ import (
 
 type Config struct {
 	RabbitMQ RabbitMQConfig
+	Postgres PostgresConfig
+}
+
+type PostgresConfig struct {
+	URL string
 }
 
 type RabbitMQConfig struct {
@@ -27,6 +32,12 @@ func LoadConfig() *Config {
 			URL: getEnv(
 				"RABBITMQ_URL",
 				"amqp://guest:guest@localhost:5672/",
+			),
+		},
+		Postgres: PostgresConfig{
+			URL: getEnv(
+				"DATABASE_URL",
+				"postgres://events:events@localhost:5432/events-db?sslmode=disable",
 			),
 		},
 	}

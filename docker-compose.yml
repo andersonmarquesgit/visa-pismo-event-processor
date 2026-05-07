@@ -1,5 +1,19 @@
 services:
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: events_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: events
+      POSTGRES_DB: events-db
+    # Roda *.sql em /docker-entrypoint-initdb.d/ só na primeira subida (volume vazio).
+    # Para aplicar de novo do zero: docker compose down -v && docker compose up -d
+    volumes:
+      - ./internal/infrastructure/persistence/postgres/migrations/001_processed_events.sql:/docker-entrypoint-initdb.d/01_processed_events.sql:ro
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
