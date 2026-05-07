@@ -9,8 +9,6 @@ type Producer struct {
 	Connection   *amqp.Connection
 	Exchange     string
 	ExchangeType string
-	QueueName    string
-	RoutingKey   string
 }
 
 type Producers struct {

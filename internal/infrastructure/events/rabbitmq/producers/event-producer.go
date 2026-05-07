@@ -3,15 +3,15 @@ package producers
 import (
 	"context"
 
+	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/infrastructure/events/rabbitmq"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func NewEventProducer(conn *amqp.Connection) (*Producer, error) {
 	producer := Producer{
 		Connection:   conn,
-		Exchange:     "events-exchange",
-		QueueName:    "events-queue",
-		ExchangeType: "topic",
+		Exchange:     rabbitmq.EventsExchange,
+		ExchangeType: rabbitmq.EventsExchangeType,
 	}
 
 	err := producer.setup()
@@ -22,7 +22,7 @@ func NewEventProducer(conn *amqp.Connection) (*Producer, error) {
 	return &producer, nil
 }
 
-func (p *Producer) Publish(body []byte) error {
+func (p *Producer) Publish(routingKey string, body []byte) error {
 	channel, err := p.Connection.Channel()
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (p *Producer) Publish(body []byte) error {
 	return channel.PublishWithContext(
 		context.Background(),
 		p.Exchange,
-		p.RoutingKey,
+		routingKey,
 		false,
 		false,
 		amqp.Publishing{

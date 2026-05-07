@@ -53,7 +53,7 @@ func main() {
 			continue
 		}
 
-		err = producers.EventProducer.Publish(body)
+		err = producers.EventProducer.Publish(ev.EventType, body)
 		if err != nil {
 			log.Printf("publish error: %v", err)
 			continue
