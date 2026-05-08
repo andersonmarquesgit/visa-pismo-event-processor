@@ -2,6 +2,7 @@ package consumers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -84,7 +85,14 @@ func (consumer *Consumer) Listen(ctx context.Context, handler func(msg amqp.Deli
 		defer wg.Done()
 		for msg := range msgs {
 			if err := handler(msg); err != nil {
-				log.Printf("handler failed, sending to dead-letter queue %q: %v", rabbitmq.EventsDeadLetterQueue, err)
+				class := "unknown"
+				switch {
+				case errors.Is(err, handlers.ErrInvalidEvent):
+					class = "invalid_event"
+				case errors.Is(err, handlers.ErrTransient):
+					class = "transient"
+				}
+				log.Printf("handler failed | class=%s | action=dlq | dead_letter_queue=%q | err=%v", class, rabbitmq.EventsDeadLetterQueue, err)
 				if nackErr := msg.Nack(false, false); nackErr != nil {
 					log.Printf("nack: %v", nackErr)
 				}

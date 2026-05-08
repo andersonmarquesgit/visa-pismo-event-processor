@@ -35,6 +35,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
+		if !errors.Is(err, ErrInvalidEvent) {
+			t.Fatalf("expected ErrInvalidEvent, got %v", err)
+		}
 		if repo.lastSaved != nil {
 			t.Fatalf("did not expect Save to be called")
 		}
@@ -58,6 +61,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
+		if !errors.Is(err, ErrInvalidEvent) {
+			t.Fatalf("expected ErrInvalidEvent, got %v", err)
+		}
 		if repo.lastSaved != nil {
 			t.Fatalf("did not expect Save to be called")
 		}
@@ -80,6 +86,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		err := h.HandleEvent(amqp.Delivery{Body: body})
 		if err == nil {
 			t.Fatalf("expected error")
+		}
+		if !errors.Is(err, ErrInvalidEvent) {
+			t.Fatalf("expected ErrInvalidEvent, got %v", err)
 		}
 		if repo.lastSaved != nil {
 			t.Fatalf("did not expect Save to be called")
@@ -105,6 +114,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
+		if !errors.Is(err, ErrInvalidEvent) {
+			t.Fatalf("expected ErrInvalidEvent, got %v", err)
+		}
 		if repo.lastSaved != nil {
 			t.Fatalf("did not expect Save to be called")
 		}
@@ -129,6 +141,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
+		if !errors.Is(err, ErrInvalidEvent) {
+			t.Fatalf("expected ErrInvalidEvent, got %v", err)
+		}
 		if repo.lastSaved != nil {
 			t.Fatalf("did not expect Save to be called")
 		}
@@ -152,6 +167,9 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		err := h.HandleEvent(amqp.Delivery{Body: body})
 		if err == nil {
 			t.Fatalf("expected error")
+		}
+		if !errors.Is(err, ErrTransient) {
+			t.Fatalf("expected ErrTransient, got %v", err)
 		}
 	})
 
