@@ -8,9 +8,10 @@ import (
 type payloadValidator func(raw json.RawMessage) error
 
 var payloadValidators = map[string]payloadValidator{
-	"user.created":            validateUserCreatedPayload,
-	"transaction.authorized":  validateTransactionAuthorizedPayload,
-	// Keep this list intentionally small and focused for the challenge.
+	"user.created":           validateUserCreatedPayload,
+	"transaction.authorized": validateTransactionAuthorizedPayload,
+	"monitoring.alert":       validateMonitoringAlertPayload,
+	// A short list with just a few types of events for the initial context of the project.
 }
 
 func validatePayload(eventType string, raw json.RawMessage) error {
@@ -62,6 +63,26 @@ func validateTransactionAuthorizedPayload(raw json.RawMessage) error {
 	return nil
 }
 
+func validateMonitoringAlertPayload(raw json.RawMessage) error {
+	obj, err := asObject(raw)
+	if err != nil {
+		return fmt.Errorf("payload must be an object: %w", err)
+	}
+	if !hasNonEmptyString(obj, "alert_id") {
+		return fmt.Errorf("payload.alert_id is required")
+	}
+	if !hasNonEmptyString(obj, "service") {
+		return fmt.Errorf("payload.service is required")
+	}
+	if !hasNonEmptyString(obj, "severity") {
+		return fmt.Errorf("payload.severity is required")
+	}
+	if !hasNonEmptyString(obj, "title") {
+		return fmt.Errorf("payload.title is required")
+	}
+	return nil
+}
+
 func asObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
@@ -93,4 +114,3 @@ func hasNumber(obj map[string]json.RawMessage, key string) bool {
 	var n float64
 	return json.Unmarshal(raw, &n) == nil
 }
-

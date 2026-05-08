@@ -214,5 +214,29 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 			t.Fatalf("expected Save to be called")
 		}
 	})
+
+	t.Run("valid monitoring.alert contract persists", func(t *testing.T) {
+		t.Parallel()
+
+		repo := &fakeProcessedEventsRepo{}
+		h := NewEventHandler(repo, "w1")
+
+		ev := event.Event{
+			ID:        "e3",
+			TenantID:  "t1",
+			EventType: "monitoring.alert",
+			Timestamp: time.Now(),
+			Payload:   json.RawMessage(`{"alert_id":"a1","service":"svc","severity":"warning","title":"t"}`),
+		}
+		body, _ := json.Marshal(ev)
+
+		err := h.HandleEvent(amqp.Delivery{Body: body})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if repo.lastSaved == nil {
+			t.Fatalf("expected Save to be called")
+		}
+	})
 }
 
