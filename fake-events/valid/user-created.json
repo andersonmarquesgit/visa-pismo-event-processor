@@ -1,0 +1,12 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "tenant_id": "visa",
+  "event_type": "user.created",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "payload": {
+    "user_id": "user_123",
+    "email": "demo.user@visa.com",
+    "name": "Demo User",
+    "status": "active"
+  }
+}

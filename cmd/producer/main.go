@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/domain/event"
@@ -14,6 +15,7 @@ import (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
 	cfg := config.LoadConfig()
 
@@ -28,75 +30,88 @@ func main() {
 		log.Fatalf("Could not create RabbitMQ producers: %v", err)
 	}
 
-	eventTypes := []string{
-		"transaction.authorized",
-		"monitoring.alert",
-		"user.created",
+	validEventFiles := []string{
+		"fake-events/valid/transaction-authorized.json",
+		"fake-events/valid/monitoring-alert.json",
+		"fake-events/valid/user-created.json",
+	}
+
+	invalidEventFiles := []string{
+		"fake-events/invalid/malformed.json",
 	}
 
 	for {
-
-		isInvalid := rand.Intn(100) < 10
-
-		var body []byte
-		var routingKey string
-
-		if isInvalid {
-			if rand.Intn(2) == 0 {
-				body = []byte(`{"id":`)
-				routingKey = "malformed.json"
-
-				log.Printf("malformed event published")
-			} else {
-				ev := event.Event{
-					ID:        uuid.NewString(),
-					TenantID:  "visa",
-					EventType: "demo.fail_processing",
-					Timestamp: time.Now(),
-					Payload: map[string]interface{}{
-						"reason": "simulated failure",
-					},
-				}
-
-				body, _ = json.Marshal(ev)
-				routingKey = ev.EventType
-				log.Printf(
-					"poison event published | type=%s | id=%s",
-					ev.EventType,
-					ev.ID,
-				)
-			}
+		if shouldPublishInvalidEvent() {
+			publishInvalidEvent(producers, invalidEventFiles)
 		} else {
-			eventType := eventTypes[rand.Intn(len(eventTypes))]
-
-			ev := event.Event{
-				ID:        uuid.NewString(),
-				TenantID:  "visa",
-				EventType: eventType,
-				Timestamp: time.Now(),
-				Payload: map[string]interface{}{
-					"random": rand.Intn(1000),
-				},
-			}
-
-			body, _ = json.Marshal(ev)
-			routingKey = ev.EventType
-			log.Printf(
-				"valid event published | type=%s | id=%s",
-				ev.EventType,
-				ev.ID,
-			)
-		}
-
-		err = producers.EventProducer.Publish(
-			routingKey,
-			body,
-		)
-
-		if err != nil {
-			log.Printf("publish error: %v", err)
+			publishValidEvent(producers, validEventFiles)
 		}
 
 		time.Sleep(2 * time.Second)
+	}
+}
+
+func shouldPublishInvalidEvent() bool {
+	return rand.Intn(100) < 10
+}
+
+func loadEventJSON(path string) (event.Event, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return event.Event{}, err
+	}
+
+	var ev event.Event
+	if err := json.Unmarshal(b, &ev); err != nil {
+		return event.Event{}, err
+	}
+
+	return ev, nil
+}
+
+func publishInvalidEvent(p *producers.Producers, invalidEventFiles []string) {
+	path := invalidEventFiles[rand.Intn(len(invalidEventFiles))]
+
+	var (
+		body       []byte
+		routingKey string
+	)
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("could not read malformed event file: %v", err)
+		return
+	}
+
+	routingKey = "malformed.json"
+	log.Printf("malformed event published")
+
+	if err := p.EventProducer.Publish(routingKey, body); err != nil {
+		log.Printf("publish error: %v", err)
+	}
+}
+
+func publishValidEvent(p *producers.Producers, validEventFiles []string) {
+	path := validEventFiles[rand.Intn(len(validEventFiles))]
+	ev, err := loadEventJSON(path)
+	if err != nil {
+		log.Printf("could not load valid event file: %v", err)
+		return
+	}
+
+	ev.ID = uuid.NewString()
+	ev.Timestamp = time.Now()
+
+	body, err := json.Marshal(ev)
+	if err != nil {
+		log.Printf("could not marshal event: %v", err)
+		return
+	}
+
+	routingKey := ev.EventType
+	log.Printf("valid event published | type=%s | id=%s", ev.EventType, ev.ID)
+
+	if err := p.EventProducer.Publish(routingKey, body); err != nil {
+		log.Printf("publish error: %v", err)
 	}
 }

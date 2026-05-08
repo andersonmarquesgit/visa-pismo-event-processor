@@ -1,0 +1,26 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "tenant_id": "visa",
+  "event_type": "transaction.authorized",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "payload": {
+    "transaction_id": "txn_123456789",
+    "card_id": "card_987654321",
+    "account_id": "acc_13579",
+    "merchant": {
+      "id": "m_001",
+      "name": "Coffee Shop Demo",
+      "mcc": "5812",
+      "country": "BR"
+    },
+    "amount": {
+      "value": 1990,
+      "currency": "BRL"
+    },
+    "authorization": {
+      "code": "A1B2C3",
+      "channel": "POS",
+      "entry_mode": "CHIP"
+    }
+  }
+}

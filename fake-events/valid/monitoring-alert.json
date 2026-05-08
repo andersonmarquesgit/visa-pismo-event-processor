@@ -1,0 +1,17 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "tenant_id": "visa",
+  "event_type": "monitoring.alert",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "payload": {
+    "alert_id": "alert_001",
+    "service": "visa-pismo-event-processor",
+    "severity": "warning",
+    "title": "High DLQ rate detected",
+    "details": {
+      "queue": "events.dlq",
+      "rate_per_min": 12,
+      "window_sec": 300
+    }
+  }
+}
