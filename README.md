@@ -88,12 +88,13 @@ Nota: `make down` não remove volumes. Para reset total (inclui volume do Postgr
 
 - **Producer** (`cmd/producer`)
     - Publica eventos JSON no exchange `events-exchange` (tipo `topic`).
-    - Publica eventos válidos com `routingKey = eventType` e injeta `id` único por evento.
+    - Publica eventos válidos com `routingKey = event.event_type` e injeta `id` único por evento.
     - Também publica eventos inválidos (payload malformado) para simular falhas.
 - **Processor** (`cmd/processor`)
     - Consome da fila `events-processing-queue` com **ACK/NACK manual**.
     - Persiste um registro de “evento processado” no Postgres.
-    - Em falha (payload inválido, sem `id`, erro de persistência), **NACK com requeue=false** → DLQ.
+    - O handler classifica erros (ex.: `ErrInvalidEvent`, `ErrTransient`).
+    - Em falha, o comportamento atual é **NACK com requeue=false** → DLQ (retry para `ErrTransient` ainda não implementado).
 - **RabbitMQ**
     - Exchange: `events-exchange` (tipo `topic`).
     - Fila principal: `events-processing-queue`.
@@ -156,26 +157,29 @@ Isso demonstra:
 
 ## Fluxo (fim a fim)
 
-1. O `producer` lê um JSON de `fake-events/valid/*` ou `fake-events/invalid/*`.
+1. O `producer` escolhe um arquivo de evento fake:
+    - válidos em `fake-events/valid/*`
+    - inválidos em `fake-events/invalid/*`
 2. Para evento válido:
-    - Define `event.id` e `event.timestamp`.
-    - Publica no exchange `events-exchange` com `routingKey = event.eventType`.
+    - Lê o JSON, seta `event.id` (UUID novo) e `event.timestamp` (agora).
+    - Publica no exchange `events-exchange` com `routingKey = event.event_type`.
 3. Para evento inválido:
-    - Publica payload malformado com `routingKey = malformed.json`.
-4. O `processor` consome mensagens da `events-processing-queue`.
-5. O handler:
-    - Faz `json.Unmarshal`.
-    - Valida existência de `event.id`.
-    - Persiste em `processed_events` usando `ON CONFLICT (event_id) DO NOTHING` (idempotência).
+    - Publica o payload malformado (raw bytes) com `routingKey = malformed.json`.
+4. O `processor` (várias instâncias) consome mensagens da `events-processing-queue`.
+5. O handler do `processor`:
+    - Faz `json.Unmarshal` do corpo da mensagem.
+    - Valida campos obrigatórios: `id`, `tenant_id`, `event_type`.
+    - Valida o contrato do `payload` **apenas para alguns tipos conhecidos de demo** (ex.: `user.created`, `transaction.authorized`, `monitoring.alert`). Tipos desconhecidos são aceitos.
+    - Persiste em `processed_events` (Postgres) com idempotência via `ON CONFLICT (event_id) DO NOTHING`.
 6. Resultado:
     - Se deu tudo certo: **`ACK`**
-    - Se falhou em qualquer ponto: **`NACK(requeue=false)`** → mensagem segue para **DLQ**
+    - Se o handler falhar: **`NACK(requeue=false)`** → mensagem segue para **DLQ** (comportamento atual)
 
 ## Diagrama (alto nível)
 
 ```mermaid
 flowchart LR
-  P[producer] -->|publish\nroutingKey=eventType| X((events-exchange\ntopic))
+  P[producer] -->|publish\nroutingKey=event_type| X((events-exchange\ntopic))
   X -->|binding #| Q[events-processing-queue]
 
   subgraph Processors["processors (competing consumers)"]
@@ -187,10 +191,6 @@ flowchart LR
   Q --> C1
   Q --> C2
   Q --> C3
-
-  C1 -->|ACK| Q
-  C2 -->|ACK| Q
-  C3 -->|ACK| Q
 
   C1 -->|NACK requeue=false| DLQ[events-dead-letter-queue]
   C2 -->|NACK requeue=false| DLQ
@@ -283,7 +283,7 @@ worker=processor-2 | event_id=1e57d3ad-0110-494c-b239-5e8bfa1aeb49 | type=transa
 ### DLQ flow
 
 ```text
-handler failed, sending to dead-letter queue "events-dead-letter-queue": invalid event payload
+handler failed | class=invalid_event | action=dlq | dead_letter_queue="events-dead-letter-queue" | err=invalid event: invalid json payload: ...
 ```
 
 ## Concorrência (Processors concorrentes)
@@ -357,7 +357,7 @@ Ou seja: se o mesmo evento (mesmo `event_id`) for entregue mais de uma vez (o qu
 
 ### Por que **topic exchange**?
 
-- **Roteamento por tipo**: usar `routingKey = eventType` permite evoluir para rotas por domínio (ex.: `transaction.*`, `user.*`) sem mudar produtores.
+- **Roteamento por tipo**: usar `routingKey = event_type` permite evoluir para rotas por domínio (ex.: `transaction.*`, `user.*`) sem mudar produtores.
 - **Extensibilidade**: amanhã podemos criar novas filas/consumidores com bindings específicos (ex.: `transaction.#`) sem impactar o fluxo atual.
 - **Compatível com o demo atual**: mesmo com binding `#` (tudo), mantém o modelo certo para crescer.
 
