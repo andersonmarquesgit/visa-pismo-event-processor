@@ -55,6 +55,18 @@ func (h *EventHandler) HandleEvent(msg amqp.Delivery) error {
 		)
 		return fmt.Errorf("event without tenant_id")
 	}
+	if ev.EventType == "" {
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%s",
+			h.workerID, ev.ID, "unknown", time.Since(start).Milliseconds(), "event without event_type",
+		)
+		return fmt.Errorf("event without event_type")
+	}
+	if err := validatePayload(ev.EventType, ev.Payload); err != nil {
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%v",
+			h.workerID, ev.ID, ev.EventType, time.Since(start).Milliseconds(), err,
+		)
+		return fmt.Errorf("invalid event contract: %w", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

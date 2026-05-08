@@ -50,7 +50,7 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 			TenantID:  "t1",
 			EventType: "user.created",
 			Timestamp: time.Now(),
-			Payload:   map[string]any{"x": "y"},
+			Payload:   json.RawMessage(`{"user_id":"u1","email":"e@x.com"}`),
 		}
 		body, _ := json.Marshal(ev)
 
@@ -73,7 +73,55 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 			ID:        "e1",
 			EventType: "user.created",
 			Timestamp: time.Now(),
-			Payload:   map[string]any{"x": "y"},
+			Payload:   json.RawMessage(`{"user_id":"u1","email":"e@x.com"}`),
+		}
+		body, _ := json.Marshal(ev)
+
+		err := h.HandleEvent(amqp.Delivery{Body: body})
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if repo.lastSaved != nil {
+			t.Fatalf("did not expect Save to be called")
+		}
+	})
+
+	t.Run("missing event_type returns error", func(t *testing.T) {
+		t.Parallel()
+
+		repo := &fakeProcessedEventsRepo{}
+		h := NewEventHandler(repo, "w1")
+
+		ev := event.Event{
+			ID:        "e1",
+			TenantID:  "t1",
+			EventType: "",
+			Timestamp: time.Now(),
+			Payload:   json.RawMessage(`{"user_id":"u1","email":"e@x.com"}`),
+		}
+		body, _ := json.Marshal(ev)
+
+		err := h.HandleEvent(amqp.Delivery{Body: body})
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if repo.lastSaved != nil {
+			t.Fatalf("did not expect Save to be called")
+		}
+	})
+
+	t.Run("known type with invalid payload returns error", func(t *testing.T) {
+		t.Parallel()
+
+		repo := &fakeProcessedEventsRepo{}
+		h := NewEventHandler(repo, "w1")
+
+		ev := event.Event{
+			ID:        "e1",
+			TenantID:  "t1",
+			EventType: "user.created",
+			Timestamp: time.Now(),
+			Payload:   json.RawMessage(`{"user_id":"u1"}`),
 		}
 		body, _ := json.Marshal(ev)
 
@@ -97,7 +145,7 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 			TenantID:  "t1",
 			EventType: "user.created",
 			Timestamp: time.Now(),
-			Payload:   map[string]any{"x": "y"},
+			Payload:   json.RawMessage(`{"user_id":"u1","email":"e@x.com"}`),
 		}
 		body, _ := json.Marshal(ev)
 
@@ -118,7 +166,7 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 			TenantID:  "t1",
 			EventType: "user.created",
 			Timestamp: time.Now(),
-			Payload:   map[string]any{"x": "y"},
+			Payload:   json.RawMessage(`{"user_id":"u1","email":"e@x.com"}`),
 		}
 		body, _ := json.Marshal(ev)
 
@@ -140,6 +188,30 @@ func TestEventHandler_HandleEvent(t *testing.T) {
 		}
 		if len(repo.lastSaved.Payload) == 0 {
 			t.Fatalf("expected Payload to be set")
+		}
+	})
+
+	t.Run("valid transaction.authorized contract persists", func(t *testing.T) {
+		t.Parallel()
+
+		repo := &fakeProcessedEventsRepo{}
+		h := NewEventHandler(repo, "w1")
+
+		ev := event.Event{
+			ID:        "e2",
+			TenantID:  "t1",
+			EventType: "transaction.authorized",
+			Timestamp: time.Now(),
+			Payload:   json.RawMessage(`{"transaction_id":"txn_1","amount":{"value":10,"currency":"BRL"}}`),
+		}
+		body, _ := json.Marshal(ev)
+
+		err := h.HandleEvent(amqp.Delivery{Body: body})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if repo.lastSaved == nil {
+			t.Fatalf("expected Save to be called")
 		}
 	})
 }
