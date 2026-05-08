@@ -27,12 +27,12 @@ func NewEventHandler(processedEvents *repository.ProcessedEventRepository) *Even
 func (h *EventHandler) HandleEvent(msg amqp.Delivery) error {
 	var ev event.Event
 	if err := json.Unmarshal(msg.Body, &ev); err != nil {
-		log.Printf("invalid event payload (ack to drop): %v", err)
-		return nil
+		log.Printf("invalid event payload (will dead-letter): %v", err)
+		return fmt.Errorf("invalid event payload: %w", err)
 	}
 	if ev.ID == "" {
-		log.Printf("event without id (ack to drop)")
-		return nil
+		log.Printf("event without id (will dead-letter)")
+		return fmt.Errorf("event without id")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

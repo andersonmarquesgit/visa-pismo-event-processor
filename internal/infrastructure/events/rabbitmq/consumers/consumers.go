@@ -52,7 +52,7 @@ func (consumer *Consumer) setup() error {
 		return err
 	}
 
-	_, err = rabbitmq.DeclareQueue(channel, consumer.QueueName)
+	_, err = rabbitmq.DeclareEventsProcessingQueue(channel)
 	if err != nil {
 		return err
 	}
@@ -84,9 +84,8 @@ func (consumer *Consumer) Listen(ctx context.Context, handler func(msg amqp.Deli
 		defer wg.Done()
 		for msg := range msgs {
 			if err := handler(msg); err != nil {
-				log.Printf("could not handle message: %v", err)
-				// Adicionei um requeue até concluir a DLQ ou retry
-				if nackErr := msg.Nack(false, true); nackErr != nil {
+				log.Printf("handler failed, sending to dead-letter queue %q: %v", rabbitmq.EventsDeadLetterQueue, err)
+				if nackErr := msg.Nack(false, false); nackErr != nil {
 					log.Printf("nack: %v", nackErr)
 				}
 				continue
