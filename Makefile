@@ -22,6 +22,10 @@ logs:
 test:
 	go test ./...
 
+coverage:
+	go test ./... -coverprofile=coverage.out -covermode=atomic
+	go tool cover -func=coverage.out
+
 tidy:
 	go mod tidy
 

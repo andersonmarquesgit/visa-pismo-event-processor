@@ -10,17 +10,20 @@ import (
 
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/domain/event"
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/infrastructure/persistence/postgres/model"
-	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/infrastructure/persistence/postgres/repository"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+type ProcessedEventsRepository interface {
+	Save(ctx context.Context, e *model.ProcessedEvent) error
+}
+
 type EventHandler struct {
-	processedEvents *repository.ProcessedEventRepository
+	processedEvents ProcessedEventsRepository
 	workerID        string
 }
 
-func NewEventHandler(processedEvents *repository.ProcessedEventRepository, workerID string) *EventHandler {
+func NewEventHandler(processedEvents ProcessedEventsRepository, workerID string) *EventHandler {
 	return &EventHandler{
 		processedEvents: processedEvents,
 		workerID:        workerID,
@@ -45,6 +48,12 @@ func (h *EventHandler) HandleEvent(msg amqp.Delivery) error {
 			h.workerID, "", ev.EventType, time.Since(start).Milliseconds(), "event without id",
 		)
 		return fmt.Errorf("event without id")
+	}
+	if ev.TenantID == "" {
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%s",
+			h.workerID, ev.ID, ev.EventType, time.Since(start).Milliseconds(), "event without tenant_id",
+		)
+		return fmt.Errorf("event without tenant_id")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
