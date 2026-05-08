@@ -1,9 +1,7 @@
 
 # Event Processor
 
-Processador de eventos funcionando como um
-serviço, sempre disponível para receber eventos de diferentes tipos, lidar com a validação, triagem e persistência, preparando o evento para entrega ao
-cliente final por outro serviço posteriormente.
+Um processador de eventos rodando como serviço: sempre disponível para receber eventos de tipos diferentes, validar, triar e persistir. A ideia é preparar o evento para ser entregue ao cliente final por outro serviço depois.
 
 Demonstrando essencialmente:
 
@@ -12,6 +10,77 @@ Demonstrando essencialmente:
 - **ACK/NACK manual** para garantir **at-least-once** e controlar falhas.
 - **DLQ (Dead Letter Queue)** para eventos inválidos/falhos, com trilha para inspeção/replay.
 - **Idempotência** por **dedupe no Postgres** (`UNIQUE(event_id)` + `ON CONFLICT DO NOTHING`).
+
+## Como executar (rápido)
+
+### Requisitos
+
+- Docker + Docker Compose
+- Go **1.26+** (o repo usa `toolchain go1.26.2` em `go.mod`)
+
+### Subir tudo e publicar eventos automaticamente
+
+```bash
+make up
+```
+
+O que acontece no `make up`:
+
+- Sobe a stack com `docker compose up -d --build` (**Postgres, RabbitMQ e `processor-1/2/3`**)
+- Em seguida roda o `producer` **no host** com `go run ./cmd/producer`
+
+Observações:
+
+- O `producer` roda em loop e **mantém o terminal ocupado**. Para parar, use `Ctrl+C`.
+- Para rodar o `producer` em outro terminal, prefira subir só a infra (ver abaixo).
+
+### Subir só a infra (sem producer)
+
+```bash
+docker compose up -d --build
+```
+
+Em outro terminal, rode o producer:
+
+```bash
+make producer
+```
+
+### Rodar um processor local (sem Docker)
+
+Com RabbitMQ e Postgres rodando via compose, você pode rodar um `processor` local:
+
+```bash
+make processor
+```
+
+Opcionalmente, configure as variáveis (exemplo):
+
+```bash
+export WORKER_ID=processor-local
+export RABBITMQ_URL=amqp://guest:guest@localhost:5672/
+export DATABASE_URL="postgres://events:events@localhost:5432/events-db?sslmode=disable"
+make processor
+```
+
+### Acessos úteis
+
+- **RabbitMQ Management UI**: `http://localhost:15672` (user/pass: `guest` / `guest`)
+- **Postgres**: `localhost:5432` (user/pass/db: `events` / `events` / `events-db`)
+
+### Logs dos containers
+
+```bash
+make logs
+```
+
+### Parar a stack
+
+```bash
+make down
+```
+
+Nota: `make down` não remove volumes. Para reset total (inclui volume do Postgres), veja a seção “Reset completo”.
 
 ## Arquitetura
 
@@ -79,10 +148,11 @@ Exemplo de logs:
 2026/05/08 04:13:15 worker=processor-2 | event_id=... | type=user.created | status=processed | duration_ms=289
 ```
 
-This demonstrates:
-- horizontal scalability
-- workload distribution
-- parallel processing
+Isso demonstra:
+
+- escala horizontal
+- distribuição de carga
+- processamento em paralelo
 
 ## Fluxo (fim a fim)
 
@@ -168,64 +238,6 @@ Invalid messages
 +---------------------------+
 ```
 
-## Como executar
-
-### Requisitos
-
-- Docker + Docker Compose
-- Go (para rodar `producer` localmente; o `processor` também pode rodar local)
-
-### Subindo stack completa (RabbitMQ + Postgres + 3 processors) e iniciando o producer
-
-```bash
-make up
-```
-
-O `make up` faz:
-
-- `docker compose up -d --build` (sobe Postgres, RabbitMQ e `processor-1/2/3`)
-- `go run ./cmd/producer` (roda o producer no host, publicando eventos a cada ~2s)
-
-### Rodar só a infra (sem producer)
-
-```bash
-docker compose up -d --build
-```
-
-Em outro terminal:
-
-```bash
-make producer
-```
-
-### Rodar o processor localmente (sem Docker)
-
-Com RabbitMQ e Postgres rodando (via compose), você pode rodar um `processor` local:
-
-```bash
-make processor
-```
-
-Opcionalmente defina:
-
-```bash
-export WORKER_ID=processor-local
-export RABBITMQ_URL=amqp://guest:guest@localhost:5672/
-export DATABASE_URL="postgres://events:events@localhost:5432/events-db?sslmode=disable"
-make processor
-```
-
-### Acessos úteis
-
-- **RabbitMQ Management UI**: `http://localhost:15672` (user/pass default: `guest` / `guest`)
-- **Postgres**: `localhost:5432` (user/pass/db: `events` / `events` / `events-db`)
-
-### Logs
-
-```bash
-make logs
-```
-
 ### Reset completo (inclui volume do Postgres)
 
 O Postgres executa o SQL de init **só na primeira subida com volume vazio**. Para resetar tudo:
@@ -234,16 +246,29 @@ O Postgres executa o SQL de init **só na primeira subida com volume vazio**. Pa
 docker compose down -v && docker compose up -d --build
 ```
 
-## Comandos Úteis
+## Comandos úteis (Make)
 
 ```bash
 make up
 make producer
+make processor
 make logs
 make down
 make test
+make coverage
 make tidy
 ```
+
+O que cada um faz:
+
+- **`make up`**: sobe a infra + processors via Docker Compose e depois roda o `producer` localmente
+- **`make producer`**: roda `go run ./cmd/producer` (publica eventos de demo a cada ~2s; ~10% malformados)
+- **`make processor`**: roda `go run ./cmd/processor` (útil para rodar um worker local extra)
+- **`make logs`**: segue logs do Docker Compose (`--tail=200`)
+- **`make down`**: derruba containers (sem remover volumes)
+- **`make test`**: `go test ./...`
+- **`make coverage`**: gera `coverage.out` e imprime o resumo no terminal
+- **`make tidy`**: `go mod tidy`
 
 ---
 
@@ -283,13 +308,20 @@ O `docker-compose.yml` sobe **3 instâncias** (`processor-1`, `processor-2`, `pr
 
 ### Quando uma mensagem vai para a DLQ?
 
-O `processor` manda para a DLQ quando:
+O `processor` **classifica erros** em dois grupos:
 
-- O JSON é inválido (não faz unmarshal).
-- O evento não tem `id`.
-- O Postgres falha ao persistir (timeout/indisponibilidade/erro).
+- **`ErrInvalidEvent` (evento inválido / problema de contrato)**:
+    - JSON inválido (falha no `unmarshal`)
+    - Campos obrigatórios ausentes (ex.: `id`, `tenant_id`, `event_type`)
+    - Payload não respeita o contrato esperado do `event_type`
+    - **Ação**: vai para a **DLQ**
 
-Isso ocorre via `NACK(requeue=false)` na mensagem.
+- **`ErrTransient` (falha transitória de infra)**:
+    - Erro ao persistir no Postgres (timeout, indisponibilidade, falhas de rede)
+    - **Ação desejada**: **retry** (requeue / política de tentativas)
+    - **Comportamento atual**: **também vai para a DLQ** (retry ainda não implementado)
+
+Tecnicamente, a ida para a DLQ ocorre via `NACK(requeue=false)` na mensagem.
 
 ### Por que DLQ?
 
