@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/domain/event"
@@ -16,22 +17,33 @@ import (
 
 type EventHandler struct {
 	processedEvents *repository.ProcessedEventRepository
+	workerID        string
 }
 
-func NewEventHandler(processedEvents *repository.ProcessedEventRepository) *EventHandler {
+func NewEventHandler(processedEvents *repository.ProcessedEventRepository, workerID string) *EventHandler {
 	return &EventHandler{
 		processedEvents: processedEvents,
+		workerID:        workerID,
 	}
 }
 
 func (h *EventHandler) HandleEvent(msg amqp.Delivery) error {
+	start := time.Now()
+
+	// Small randomized delay to make competing-consumers distribution visible during demos.
+	time.Sleep(time.Duration(100+rand.Intn(401)) * time.Millisecond)
+
 	var ev event.Event
 	if err := json.Unmarshal(msg.Body, &ev); err != nil {
-		log.Printf("invalid event payload (will dead-letter): %v", err)
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%v",
+			h.workerID, "", "unknown", time.Since(start).Milliseconds(), err,
+		)
 		return fmt.Errorf("invalid event payload: %w", err)
 	}
 	if ev.ID == "" {
-		log.Printf("event without id (will dead-letter)")
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%s",
+			h.workerID, "", ev.EventType, time.Since(start).Milliseconds(), "event without id",
+		)
 		return fmt.Errorf("event without id")
 	}
 
@@ -48,9 +60,14 @@ func (h *EventHandler) HandleEvent(msg amqp.Delivery) error {
 	}
 
 	if err := h.processedEvents.Save(ctx, &pe); err != nil {
+		log.Printf("worker=%s | event_id=%s | type=%s | status=failed | sent_to_dlq=true | duration_ms=%d | err=%v",
+			h.workerID, ev.ID, ev.EventType, time.Since(start).Milliseconds(), err,
+		)
 		return fmt.Errorf("persist processed event: %w", err)
 	}
 
-	log.Printf("consumer finished | event_id=%s | type=%s", ev.ID, ev.EventType)
+	log.Printf("worker=%s | event_id=%s | type=%s | status=processed | duration_ms=%d",
+		h.workerID, ev.ID, ev.EventType, time.Since(start).Milliseconds(),
+	)
 	return nil
 }

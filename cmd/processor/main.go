@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"log"
+	"math/rand"
+	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/infrastructure/config"
 	"github.com/andersonmarquesgit/visa-pismo-event-processor/internal/infrastructure/events/rabbitmq"
@@ -15,6 +18,7 @@ import (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
 	cfg := config.LoadConfig()
 
@@ -40,13 +44,20 @@ func main() {
 	}
 	defer rabbitConn.Close()
 
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		workerID = "processor"
+	}
+
 	processedEventRepo := repository.NewProcessedEventRepository(db)
-	eventHandler := handlers.NewEventHandler(processedEventRepo)
+	eventHandler := handlers.NewEventHandler(processedEventRepo, workerID)
 	eventHandlers := handlers.NewEventHandlers(eventHandler)
 
 	if err := consumers.NewConsumers(ctx, rabbitConn, eventHandlers); err != nil {
 		log.Fatalf("Could not create RabbitMQ consumers: %v", err)
 	}
+
+	log.Printf("processor started | worker=%s | queue=%s", workerID, rabbitmq.EventsProcessingQueue)
 
 	<-ctx.Done()
 	log.Println("shutting down")
